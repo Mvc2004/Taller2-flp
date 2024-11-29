@@ -1,4 +1,4 @@
 
 # Taller2-flp
--Sofia castillo giraldo/n 
+-Sofia castillo giraldo
 -Merly velasquez cortez
