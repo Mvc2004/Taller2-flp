@@ -1,4 +1,5 @@
 #lang eopl
+
 (define especificacion-lexica
   '(
     (espacio-blanco (whitespace) skip)
@@ -54,11 +55,11 @@
 
      ;; Expresiones de listas
     (expresion ("empty") list-empty-exp)
-    (expresion ("cons" "(" expresion "," expresion ")") list-cons-exp)
+    (expresion ("cons" "(" expresion expresion ")") list-cons-exp)
     (expresion ("length" "(" expresion ")") list-length-exp)
     (expresion ("first" "(" expresion ")") list-first-exp)
     (expresion ("rest" "(" expresion ")") list-rest-exp)
-    (expresion ("nth" "(" expresion "," expresion ")") list-nth-exp)
+    (expresion ("nth" "(" expresion expresion ")") list-nth-exp)
 
     ;; Expresión condicional
     (expresion ("cond" (arbno expresion "==>" expresion) "else" "==>" expresion "end") cond-exp)
@@ -181,7 +182,7 @@
                            (tail-val (evaluar-expresion tail amb)))
                        (if (list? tail-val)
                            (cons head-val tail-val)
-                           (eopl:error "El segundo argumento de cons no es una lista" tail-val))))
+                           (eopl:error "Error:" tail-val "no es una lista"))))
       (list-length-exp (lst)
                        (let ((lst-val (evaluar-expresion lst amb)))
                          (if (list? lst-val)
@@ -205,7 +206,8 @@
                           (eopl:error "Argumentos inválidos para nth: lista o índice" lst-val n-val))))
 
       ;; Expresión condicional
-      (cond-exp (pairs else-exp)
+      
+      (cond-exp (pairs else-exp end-exp)
                 (letrec ((evaluar-cond (lambda (pairs)
                                          (cond
                                            [(null? pairs) (evaluar-expresion else-exp amb)]
@@ -213,6 +215,8 @@
                                             (evaluar-expresion (cdr (car pairs)) amb)]
                                            [else (evaluar-cond (cdr pairs))]))))
                   (evaluar-cond pairs)))
+                
+                
       ;;Condicionales
       (if-exp (condicion hace-verdadero hace-falso)
               (if
@@ -322,6 +326,7 @@
 
 
 (define operacion-prim
+  
   (lambda (lval op term)
     (cond
       [(null? lval) term]
