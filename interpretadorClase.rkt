@@ -1,4 +1,5 @@
 #lang eopl
+
 (define especificacion-lexica
   '(
     (espacio-blanco (whitespace) skip)
@@ -27,6 +28,7 @@
     ;;procedimientos
     (expresion ("proc" "(" (separated-list identificador ",") ")" expresion) proc-exp)
     (expresion ("(" expresion (arbno expresion) ")") app-exp)
+    (expresion ("[" (separated-list expresion ",") "]") list-exp)
 
     ;;fin procedimientos
     ;;procedimientos recursivos
@@ -54,11 +56,11 @@
 
      ;; Expresiones de listas
     (expresion ("empty") list-empty-exp)
-    (expresion ("cons" "(" expresion "," expresion ")") list-cons-exp)
+    (expresion ("cons" "(" expresion expresion ")") list-cons-exp)
     (expresion ("length" "(" expresion ")") list-length-exp)
     (expresion ("first" "(" expresion ")") list-first-exp)
     (expresion ("rest" "(" expresion ")") list-rest-exp)
-    (expresion ("nth" "(" expresion "," expresion ")") list-nth-exp)
+    (expresion ("nth" "(" expresion expresion ")") list-nth-exp)
 
     ;; Expresión condicional
     (expresion ("cond" (arbno expresion "==>" expresion) "else" "==>" expresion "end") cond-exp)
@@ -157,6 +159,7 @@
                                           (ambiente-vacio))))
 
 ;;Evaluar expresion
+
 (define evaluar-expresion
   (lambda (exp amb)
     (cases expresion exp
@@ -175,13 +178,15 @@
                   )
                 )
       ;; Expresiones de listas
+      
       (list-empty-exp () '())
+      
       (list-cons-exp (head tail)
                      (let ((head-val (evaluar-expresion head amb))
                            (tail-val (evaluar-expresion tail amb)))
                        (if (list? tail-val)
                            (cons head-val tail-val)
-                           (eopl:error "El segundo argumento de cons no es una lista" tail-val))))
+                           (eopl:error "Error:" tail-val "no es una lista"))))
       (list-length-exp (lst)
                        (let ((lst-val (evaluar-expresion lst amb)))
                          (if (list? lst-val)
@@ -205,19 +210,18 @@
                           (eopl:error "Argumentos inválidos para nth: lista o índice" lst-val n-val))))
 
       ;; Expresión condicional
-      (define (eval-cond-exp cond-exps env)
-  (cond
-    [(null? cond-exps) (error "No matching condition in cond!")]
-    [else
-     (let ([first-cond (car cond-exps)])
-       (if (and (pair? first-cond) (equal? (car first-cond) 'else))
-           (eval-exp (cadr first-cond) env) ; Evaluar el else
-           (if (pair? first-cond) ; Validar si es un par condición => valor
-               (if (true? (eval-exp (car first-cond) env)) ; Evaluar condición
-                   (eval-exp (cadr first-cond) env) ; Evaluar resultado si es verdadero
-                   (eval-cond-exp (cdr cond-exps) env)) 
-               (error "Malformed cond branch"))))]))
-
+      
+      (cond-exp (pairs else-exp end-exp)
+                (letrec ((evaluar-cond (lambda (pairs)
+                                         (cond
+                                           [(null? pairs) (evaluar-expresion else-exp amb)
+                                                          (evaluar-expresion end-exp amb)]
+                                           [(evaluar-expresion (car (car pairs)) amb)
+                                            (evaluar-expresion (cdr (car pairs)) amb)]
+                                           [else (evaluar-cond (cdr pairs))]))))
+                  (evaluar-cond pairs)))
+                
+                
       ;;Condicionales
       (if-exp (condicion hace-verdadero hace-falso)
               (if
@@ -264,6 +268,8 @@
                   (evaluar-expresion cuerpo-letrec
                                      (ambiente-extendido-recursivo procnames idss cuerpos amb)))
 
+      (list-exp (lexp) (map (lambda (x) (evaluar-expresion x amb)) lexp))
+      
       ;;Asignación
       ;;begin
       (begin-exp (exp lexp)
@@ -273,33 +279,21 @@
                   (begin
                     (evaluar-expresion exp amb)
                     (letrec
-                        (
-                         (evaluar-begin (lambda (lexp)
+                        ((evaluar-begin (lambda (lexp)
                                           (cond
                                             [(null? (cdr lexp)) (evaluar-expresion (car lexp) amb)]
                                             [else
                                              (begin
                                                (evaluar-expresion (car lexp) amb)
-                                               (evaluar-begin (cdr lexp))
-                                               )
-                                             ]
-                                            )
-                                          )
-                                        )
-                         )
-                      (evaluar-begin lexp)
-                      )
-                    )
-                  )
-                 )
+                                               (evaluar-begin (cdr lexp)))]))))
+                                        (evaluar-begin lexp)))))
       ;;set
       (set-exp (id exp)
                (begin
                  (setref!
                   (apply-env-ref amb id)
                   (evaluar-expresion exp amb))
-                 1)
-               )
+                 1))
       )
     
 
@@ -327,6 +321,7 @@
 
 
 (define operacion-prim
+  
   (lambda (lval op term)
     (cond
       [(null? lval) term]
@@ -382,5 +377,3 @@
 
 
 (interpretador)
-
-
