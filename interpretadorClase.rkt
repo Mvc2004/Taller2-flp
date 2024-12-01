@@ -162,112 +162,149 @@
     (cases expresion exp
       (lit-exp (dato) dato)
       (var-exp (id) (apply-env amb id))
-      ;; Booleanos
+      ;;Booleanos
       (true-exp () #true)
       (false-exp () #false)
-      ;; Primitivas
+      ;;Fin booleanos
       (prim-exp (prim args)
-                (let ((lista-numeros (map (lambda (x) (evaluar-expresion x amb)) args)))
-                  (evaluar-primitiva prim lista-numeros)))
-      ;; Condicionales
+                (let
+                    (
+                     (lista-numeros (map (lambda (x) (evaluar-expresion x amb)) args))
+                     )
+                  (evaluar-primitiva prim lista-numeros)
+                  )
+                )
+      ;; Expresiones de listas
+      (list-empty-exp () '())
+      (list-cons-exp (head tail)
+                     (let ((head-val (evaluar-expresion head amb))
+                           (tail-val (evaluar-expresion tail amb)))
+                       (if (list? tail-val)
+                           (cons head-val tail-val)
+                           (eopl:error "El segundo argumento de cons no es una lista" tail-val))))
+      (list-length-exp (lst)
+                       (let ((lst-val (evaluar-expresion lst amb)))
+                         (if (list? lst-val)
+                             (length lst-val)
+                             (eopl:error "Argumento de length no es una lista" lst-val))))
+      (list-first-exp (lst)
+                      (let ((lst-val (evaluar-expresion lst amb)))
+                        (if (and (list? lst-val) (not (null? lst-val)))
+                            (car lst-val)
+                            (eopl:error "Argumento de first no es una lista no vacía" lst-val))))
+      (list-rest-exp (lst)
+                     (let ((lst-val (evaluar-expresion lst amb)))
+                       (if (and (list? lst-val) (not (null? lst-val)))
+                           (cdr lst-val)
+                           (eopl:error "Argumento de rest no es una lista no vacía" lst-val))))
+      (list-nth-exp (lst n)
+                    (let ((lst-val (evaluar-expresion lst amb))
+                          (n-val (evaluar-expresion n amb)))
+                      (if (and (list? lst-val) (integer? n-val) (>= n-val 0) (< n-val (length lst-val)))
+                          (list-ref lst-val n-val)
+                          (eopl:error "Argumentos inválidos para nth: lista o índice" lst-val n-val))))
+
+      ;; Expresión condicional
+      (define (eval-cond-exp cond-exps env)
+  (cond
+    [(null? cond-exps) (error "No matching condition in cond!")]
+    [else
+     (let ([first-cond (car cond-exps)])
+       (if (and (pair? first-cond) (equal? (car first-cond) 'else))
+           (eval-exp (cadr first-cond) env) ; Evaluar el else
+           (if (pair? first-cond) ; Validar si es un par condición => valor
+               (if (true? (eval-exp (car first-cond) env)) ; Evaluar condición
+                   (eval-exp (cadr first-cond) env) ; Evaluar resultado si es verdadero
+                   (eval-cond-exp (cdr cond-exps) env)) 
+               (error "Malformed cond branch"))))]))
+
+      ;;Condicionales
       (if-exp (condicion hace-verdadero hace-falso)
-              (if (evaluar-expresion condicion amb)
-                  (evaluar-expresion hace-verdadero amb)
-                  (evaluar-expresion hace-falso amb)))
-      ;; Ligaduras locales
+              (if
+               (evaluar-expresion condicion amb) ;;Evaluamos la condición
+               (evaluar-expresion hace-verdadero amb) ;;En caso de que sea verdadero
+               (evaluar-expresion hace-falso amb) ;;En caso de que sea falso
+               )
+              )
+      ;;Ligaduras locales
       (let-exp (ids rands body)
-               (let ((lvalues (map (lambda (x) (evaluar-expresion x amb)) rands)))
-                 (evaluar-expresion body (ambiente-extendido ids lvalues amb))))
-      ;; Procedimientos
+               (let
+                   (
+                    (lvalues (map (lambda (x) (evaluar-expresion x amb)) rands))
+                    )
+                 (evaluar-expresion body (ambiente-extendido ids lvalues amb))
+                 )
+               )
+      ;;procedimientos
       (proc-exp (ids body)
                 (closure ids body amb))
       (app-exp (rator rands)
-               (let ((lrands (map (lambda (x) (evaluar-expresion x amb)) rands))
-                     (procV (evaluar-expresion rator amb)))
-                 (if (procval? procV)
-                     (cases procval procV
-                       (closure (lid body old-env)
-                                (if (= (length lid) (length lrands))
-                                    (evaluar-expresion body
-                                                       (ambiente-extendido lid lrands old-env))
-                                    (eopl:error "El número de argumentos no es correcto, debe enviar" (length lid) " y usted ha enviado" (length lrands)))))
-                     (eopl:error "No puede evaluarse algo que no sea un procedimiento" procV))))
-      ;; letrec
+               (let
+                   (
+                    (lrands (map (lambda (x) (evaluar-expresion x amb)) rands))
+                    (procV (evaluar-expresion rator amb))
+                    )
+                 (if
+                  (procval? procV)
+                  (cases procval procV
+                    (closure (lid body old-env)
+                             (if (= (length lid) (length lrands))
+                                 (evaluar-expresion body
+                                                (ambiente-extendido lid lrands old-env))
+                                 (eopl:error "El número de argumentos no es correcto, debe enviar" (length lid)  " y usted ha enviado" (length lrands))
+                                 )
+                             ))
+                  (eopl:error "No puede evaluarse algo que no sea un procedimiento" procV) 
+                  )
+                 )
+               )
+
+      ;;letrec
       (letrec-exp (procnames idss cuerpos cuerpo-letrec)
                   (evaluar-expresion cuerpo-letrec
                                      (ambiente-extendido-recursivo procnames idss cuerpos amb)))
-      ;; Asignación
+
+      ;;Asignación
+      ;;begin
       (begin-exp (exp lexp)
-                 (if (null? lexp)
-                     (evaluar-expresion exp amb)
-                     (begin
-                       (evaluar-expresion exp amb)
-                       (letrec
-                           ((evaluar-begin (lambda (lexp)
-                                             (cond
-                                               [(null? (cdr lexp)) (evaluar-expresion (car lexp) amb)]
-                                               [else
-                                                (begin
-                                                 (evaluar-expresion (car lexp) amb)
-                                                 (evaluar-begin (cdr lexp)))])))
-                        (evaluar-begin lexp))))
-      ;; set
+                 (if
+                  (null? lexp)
+                  (evaluar-expresion exp amb)
+                  (begin
+                    (evaluar-expresion exp amb)
+                    (letrec
+                        (
+                         (evaluar-begin (lambda (lexp)
+                                          (cond
+                                            [(null? (cdr lexp)) (evaluar-expresion (car lexp) amb)]
+                                            [else
+                                             (begin
+                                               (evaluar-expresion (car lexp) amb)
+                                               (evaluar-begin (cdr lexp))
+                                               )
+                                             ]
+                                            )
+                                          )
+                                        )
+                         )
+                      (evaluar-begin lexp)
+                      )
+                    )
+                  )
+                 )
+      ;;set
       (set-exp (id exp)
                (begin
-                 (setref! (apply-env-ref amb id)
-                          (evaluar-expresion exp amb))
-                 1))
+                 (setref!
+                  (apply-env-ref amb id)
+                  (evaluar-expresion exp amb))
+                 1)
+               )
+      )
+    
 
-      ;; Nuevas expresiones de lista
-      (list-empty-exp () '()) ;; Representación de lista vacía
-
-      (list-exp (head tail)
-                (let ((evaluated-head (evaluar-expresion head amb))
-                      (evaluated-tail (evaluar-expresion tail amb)))
-                  (if (list? evaluated-tail)
-                      (cons evaluated-head evaluated-tail)
-                      (eopl:error "Error: La cola no es una lista" evaluated-tail))))
-
-      (length-exp (list-expr)
-                  (let ((evaluated-list (evaluar-expresion list-expr amb)))
-                    (if (list? evaluated-list)
-                        (length evaluated-list)
-                        (eopl:error "Error: No es una lista" evaluated-list))))
-
-      (first-exp (list-expr)
-                 (let ((evaluated-list (evaluar-expresion list-expr amb)))
-                   (if (and (list? evaluated-list) (not (null? evaluated-list)))
-                       (car evaluated-list)
-                       (eopl:error "Error: No se puede obtener el primer elemento de una lista vacía o no válida"))))
-
-      (rest-exp (list-expr)
-                (let ((evaluated-list (evaluar-expresion list-expr amb)))
-                  (if (and (list? evaluated-list) (not (null? evaluated-list)))
-                      (cdr evaluated-list)
-                      (eopl:error "Error: No se puede obtener el resto de una lista vacía o no válida"))))
-
-      (nth-exp (list-expr index)
-               (let ((evaluated-list (evaluar-expresion list-expr amb))
-                     (evaluated-index (evaluar-expresion index amb)))
-                 (if (and (list? evaluated-list) (number? evaluated-index))
-                     (if (< evaluated-index (length evaluated-list))
-                         (list-ref evaluated-list evaluated-index)
-                         (eopl:error "Error: Índice fuera de rango"))
-                     (eopl:error "Error: Argumentos inválidos para nth"))))
-
-      ;; Sentencia cond
-      (cond-exp (cond-clauses else-clause)
-                (letrec ((evaluar-cond (lambda (clauses)
-                                         (cond
-                                           [(null? clauses)
-                                            (evaluar-expresion (cdr else-clause) amb)] ;; Clausula else
-                                           [else
-                                            (let ((condicion (evaluar-expresion (car (car clauses)) amb)))
-                                              (if condicion
-                                                  (evaluar-expresion (cadr (car clauses)) amb)
-                                                  (evaluar-cond (cdr clauses))))]))))
-                  (evaluar-cond cond-clauses))))
-    ))))
+    )
+  )
 
 ;;Manejo de primitivas
 (define evaluar-primitiva
@@ -344,7 +381,6 @@
                          especificacion-lexica especificacion-gramatical)))
 
 
-(interpretador) 
- 
+(interpretador)
 
- 
+
